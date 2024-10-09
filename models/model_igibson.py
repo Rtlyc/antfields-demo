@@ -612,7 +612,7 @@ class Model():
                 # frame_data = torch.tensor(explored_data[rand_idx]).to(self.Params['Device'])
 
             ####################! Core Training #############################
-            self.alpha = 1
+            self.alpha = 1.025
             total_diff, cur_data = self.train_core(frame_epoch, frame_data, is_one_frame)
 
 
@@ -629,9 +629,9 @@ class Model():
                     self.occ_map.update(self.cur_view.clone().cpu().numpy(), frame_points[valid].cpu().numpy(), frame_bounds[valid].cpu().numpy())
                     coverage = self.occ_map.get_coverage()
                     print("Occupancy Grid Coverage:", coverage)
-                    if coverage > 0.54:
-                        pass
-                        # break
+                    if coverage > 0.543:
+                        # pass
+                        break
                     traj_list, traj_ind = self.policy_occ(self.cur_view.detach().clone().cpu().numpy(), height=0)
                     nbv = Tensor(traj_list[traj_ind])
                 elif self.mode == READ_FROM_DEPTH:

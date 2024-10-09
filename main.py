@@ -1,8 +1,5 @@
-import numpy as np
 #! train model
-# from models import model_igibson_online_continual_newlog as md
-# from models import model_igibson_online_continual_newlog_12_4 as md
-# from models import model_igibson_online_continual_newlog_12_4_symop as md
+import numpy as np
 from models import model_igibson as md
 
 

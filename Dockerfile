@@ -36,5 +36,5 @@ RUN pip install matplotlib
 
 
 WORKDIR /antfields
-# COPY bvh-distance-queries /antfields/bvh-distance-queries
-# RUN cd /antfields/bvh-distance-queries && pip install -e .
+COPY bvh-distance-queries /antfields/bvh-distance-queries
+RUN cd /antfields/bvh-distance-queries && pip install -e .
