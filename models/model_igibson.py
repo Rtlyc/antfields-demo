@@ -29,10 +29,7 @@ import cv2
 torch.backends.cudnn.benchmark = True
 
 EXPLORATION = 1 
-READ_FROM_DEPTH = 2 
-READ_FROM_TURTLEBOT = 3
-READ_FROM_COOKED_DATA = 4
-TURTLEBOT_EXPLORATION = 5
+READ_FROM_COOKED_DATA = 2
 
 class FastTensorDataLoader:
     """
@@ -197,7 +194,7 @@ class NN(torch.nn.Module):
         #x_proj = (2.*np.pi*x) @ self.B
         return torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)    #  2*len(B)
 
-    def out2(self, coords):
+    def out(self, coords):
         
         coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
         size = coords.shape[0]
@@ -248,11 +245,11 @@ class NN(torch.nn.Module):
         
         return x, coords
 
-    def forward(self, coords):
-        coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
+    # def forward(self, coords):
+    #     coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
 
-        output, coords = self.out(coords)
-        return output, coords
+    #     output, coords = self.out(coords)
+    #     return output, coords
 
 
 class Model():
@@ -267,9 +264,6 @@ class Model():
         self.scale_factor = scale_factor
         current_time = datetime.utcnow()-timedelta(hours=5)
         self.folder = self.Params['ModelPath']+"/"+current_time.strftime("%m_%d_%H_%M")
-        if not os.path.exists(self.folder):
-            os.makedirs(self.folder)
-            # os.chmod(self.folder, 0o777)
 
         # Pass the JSON information
         self.Params['Device'] = device
@@ -309,8 +303,8 @@ class Model():
         self.mode = mode
         self.frame_buffer_size = 20
         self.camera_steps = 5000//50
-        self.minimum = 0.005 #0.02
-        self.maximum = 0.05  #0.1
+        self.minimum = 0.007 #0.02
+        self.maximum = 0.07  #0.1
         self.all_framedata = None
         self.all_surf_pc = []
         self.free_pc = []
@@ -327,27 +321,12 @@ class Model():
         
         return grad_x                                                                                                    
     
-    def Loss2(self, points, Yobs, beta, gamma):
+    def Loss(self, points, Yobs, beta, gamma):
         
       
-        start=time.time()
-        tau, Xp = self.network.out2(points)
+        tau, Xp = self.network.out(points)
         dtau = self.gradient(tau, Xp)
-        end=time.time()
-        
-        #print(end-start)
 
-        start=time.time()
-        
-        
-        #tau, dtau, Xp = self.network.out_grad(points)
-        
-        end=time.time()
-        #print(end-start)
-        #print(dtau)
-
-        #print(end-start)
-        #print('')
         D = Xp[:,self.dim:]-Xp[:,:self.dim]
         
         T0 = torch.einsum('ij,ij->i', D, D)#torch.norm(D, p=2, dim =1)**2
@@ -444,52 +423,13 @@ class Model():
     def load_rawdata(self):
         #! load data
         initial_view = Tensor([-0.3, -0.2, 0])
-        initial_view = Tensor([0.1, 0.2, 0])
-        initial_view = Tensor([-0.2, -0.1, 0])
-        initial_view = Tensor([-0.4, 0.1, 0])
-        initial_view = Tensor([-0, -0., 0])
-        initial_view = Tensor([0.25, -0.2, 0])
-        initial_view = Tensor([0.05, 0., 0]) #branford
-        # initial_view = Tensor([0.25, -0.25, 0]) #brevort
-        # initial_view = Tensor([-0., -0.25, 0]) #bolton
-
-        initial_view = Tensor([-0.3, -0.2, 0])
         self.initial_view = initial_view
         
-
-
-        if self.mode == READ_FROM_DEPTH:
-            experiment_path = "Experiments/01_31_16_20"
-            root_dir = os.path.join(experiment_path, "train_data")
-            traj_file = os.path.join(root_dir, "traj.txt")
-            self.dataset = isdf_sample.IGibsonDataset(root_dir=root_dir, traj_file=traj_file, config='configs/igibson_info.json', col_ext='.png')
-            initial_view = Tensor(self.dataset.Ts[0][:3, 3]/self.scale_factor)
-
-        elif self.mode == READ_FROM_TURTLEBOT:
-            self.dataset = isdf_sample.TurtleBotDataset(root_dir='turtlebot_data_02_07', config='configs/turtlebot4_info.json', col_ext='.jpg')
-            initial_view = Tensor(self.dataset.Ts[0][:3, 3]/self.scale_factor)
-        
-        elif self.mode == READ_FROM_COOKED_DATA: # read from file
+        if self.mode == READ_FROM_COOKED_DATA: # read from file
             # all_points = np.load("sampled_points.npy")
             # all_speeds = np.load("speed.npy")
             explored_data = np.load("data/explored_data.npy")
-            if False:
-                all_points = explored_data[:,:6]
-                all_speeds = explored_data[:,6:]
-                # all_points = np.load("logtau/sampled_points_11_30.npy")
-                # all_speeds = np.load("logtau/speed_11_30.npy")
-                # all_points = np.load("logtau/sampled_points_12_01.npy")
-                # all_speeds = np.load("logtau/speed_12_01.npy")
-                # all_speeds = np.load("logtau/batch_speeds_12_01.npy") #batch distance
-                # all_points = all_points[:300000,:]
-                all_points    = Variable(Tensor(all_points))
-                # all_speeds = all_speeds[:300000,:]
-                all_speeds  = Variable(Tensor(all_speeds))
-                print("all_points:", all_points.shape)
-                print("all_speeds:", all_speeds.shape)
-                self.all_framedata = torch.cat((all_points.to(self.Params['Device']), all_speeds.to(self.Params['Device'])), dim=1)
-            if True:
-                self.explored_data = torch.tensor(explored_data).to(self.Params['Device'])
+            self.explored_data = torch.tensor(explored_data).to(self.Params['Device'])
 
         self.cur_view = initial_view
 
@@ -532,16 +472,13 @@ class Model():
         return cur_data
 
     def train(self):
+        if not os.path.exists(self.folder):
+            os.makedirs(self.folder)
+
         self.load_rawdata()
         is_one_frame = True
         while True:
-            if False: pass
-            # if self.mode == READ_FROM_COOKED_DATA:
-            #     rand_idx = torch.randperm(self.all_framedata.shape[0])
-            #     frame_data = self.all_framedata[rand_idx]
-            #     is_one_frame = False
-            #     frame_epoch = 100
-            else:
+            if True:
                 print("Current Viewpoint:", self.cur_view)
 
                 #! generate data start
@@ -563,8 +500,10 @@ class Model():
                     frame_epoch = 50
 
                     #? save occupancy map
-                    self.occ_map.save(self.folder+"/occ_map.npz")
+                    # self.occ_map.save(self.folder+"/occ_map.npz")
                 elif self.mode == READ_FROM_COOKED_DATA:
+                    if self.frame_idx >= self.explored_data.shape[0]:
+                        break
                     heights = [0]
                     curpoints = [] 
                     curspeeds = []
@@ -573,43 +512,11 @@ class Model():
                     frame_speeds = self.explored_data[self.frame_idx, :, 6:]
                     frame_epoch = 50
 
-                elif self.mode == READ_FROM_DEPTH:
-                    # 8 directions for one frame
-                    frame_points, frame_speeds, frame_bounds = self.dataset.get_speeds(range(self.frame_idx*8,self.frame_idx*8+8), self.minimum*self.scale_factor, self.maximum*self.scale_factor, num=10000)
-                    frame_points /= self.scale_factor
-                    frame_bounds /= self.scale_factor
-                    frame_epoch = 100
-                elif self.mode == READ_FROM_TURTLEBOT:
-                    frame_points, frame_speeds, frame_bounds, surf_pc = self.dataset.get_speeds([self.frame_idx], self.minimum*self.scale_factor, self.maximum*self.scale_factor, num=10000)
-                    # frame_points, frame_speeds, frame_bounds = self.dataset.get_speeds(range(100), self.minimum*self.scale_factor, self.maximum*self.scale_factor, num=100000)
-                    frame_points /= self.scale_factor
-                    frame_bounds /= self.scale_factor
-                    frame_epoch = 10
-                    
-                    surf_pc /= self.scale_factor
-                    self.all_surf_pc.append(surf_pc)
-
-                    mask = frame_speeds[:, 1] > 0.7
-                    self.free_pc.append(frame_points[:,3:][mask])
-
-                    # pc_saved = torch.cat(self.all_surf_pc, dim=0)
-                    # np.save("allpc.npy", pc_saved.detach().cpu().numpy())
-
-                    pc_saved = torch.cat(self.free_pc, dim=0)
-                    np.save(os.path.join(self.folder,"free_pc.npy"), pc_saved.detach().cpu().numpy())
 
 
                 #! generate data end
                             
                 frame_data = torch.cat((frame_points.to(self.Params['Device']), frame_speeds.to(self.Params['Device'])), dim=1)
-                # explored_data = np.load("/home/exx/Documents/p-nt-share/Experiments/05_29_09_39/explored_data.npy").reshape(-1, 8)
-                #? by frame sequence
-                # frame_data = explored_data[self.frame_idx]
-                # frame_data = torch.tensor(frame_data).to(self.Params['Device'])
-                #? by random 
-                # explored_data = explored_data.reshape(-1, 8)
-                # rand_idx = torch.randperm(explored_data.shape[0])[:5000]
-                # frame_data = torch.tensor(explored_data[rand_idx]).to(self.Params['Device'])
 
             ####################! Core Training #############################
             self.alpha = 1.025
@@ -634,14 +541,6 @@ class Model():
                         break
                     traj_list, traj_ind = self.policy_occ(self.cur_view.detach().clone().cpu().numpy(), height=0)
                     nbv = Tensor(traj_list[traj_ind])
-                elif self.mode == READ_FROM_DEPTH:
-                    if self.frame_idx + 1 >= len(self.dataset)/8:
-                        break
-                    nbv = Tensor(self.dataset.Ts[self.frame_idx*8][:3, 3]/self.scale_factor)
-                elif self.mode == READ_FROM_TURTLEBOT:
-                    if self.frame_idx >= len(self.dataset):
-                        break 
-                    nbv = Tensor(self.dataset.Ts[self.frame_idx][:3, 3]/self.scale_factor)
 
 
                 # print("*"*10)
@@ -659,24 +558,17 @@ class Model():
                 
                 
                 #? ******************SAVINGS start*******************
-                save_traj = True 
+                save_traj = False 
                 if save_traj:
                     np.save(self.folder+"/traj"+"_"+str(self.epoch)+".npy", self.trajectory)
 
 
-
-                # if (self.epoch % self.Params['Training']['Save Every * Epoch'] == 0) or (self.epoch == self.Params['Training']['Number of Epochs']) or (self.epoch == 1):
-                # print("cur view",self.cur_view)
-                # print("nbv",nbv)
                 
                 camera_matrix = None
-                if self.mode == READ_FROM_TURTLEBOT:
-                    camera_matrix = self.dataset[self.frame_idx]["T"]
-
-                self.plot2(self.initial_view, nbv, self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy(), camera_matrix, traj_list)
+                self.plot(self.initial_view, nbv, self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy(), camera_matrix, traj_list)
 
             elif self.mode == READ_FROM_COOKED_DATA:
-                self.plot2(self.initial_view, np.array([0.3, 0.2, 0]), self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy(), None)
+                self.plot(self.initial_view, np.array([0.3, 0.2, 0]), self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy(), None)
 
             
             # self.fourplot(epoch, FRAMES[:frame_idx+1], total_diff.item(), alpha)
@@ -694,8 +586,8 @@ class Model():
 
         if True:
             print("Exploration is done. Finetuning...")
-            self.plot2(self.cur_view, nbv, self.epoch, total_diff.item(),self.alpha)
-            #TODO: train for another 1000 epochs for finetuning
+            self.plot(self.cur_view, self.cur_view, self.epoch, total_diff.item(),self.alpha)
+            #?: train for another 1000 epochs for finetuning
             # 1. data is all framedata
             prev_frame_idx = torch.randperm(self.frame_idx).tolist()[:self.frame_buffer_size-1]
             #! mix data so that the start and end points are from different frames
@@ -722,11 +614,10 @@ class Model():
             fine_epoch = 1000
             total_diff, cur_data = self.train_core(fine_epoch, fine_data, False)
 
-            # 3. save a final plot #TODO: may need some other plots
-            self.plot2(self.cur_view, nbv, self.epoch, total_diff.item(),self.alpha)
+            # 3. save a final plot #
+            self.plot(self.cur_view, self.cur_view, self.epoch, total_diff.item(),self.alpha)
             with torch.no_grad():
                 self.save(epoch=self.epoch, val_loss=total_diff)
-            # self.plot2(self.cur_view, nbv, self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy(), camera_matrix)
 
     def train_core(self, epoch, frame_data, is_one_frame=True):
         beta = 1.0
@@ -768,11 +659,7 @@ class Model():
             cur_data = torch.cat((chosen_start_points, chosen_end_points, chosen_start_speeds[:, None], chosen_end_speeds[:, None]), dim=1)
                 
         # if self.mode == READ_FROM_COOKED_DATA: #? use all framedata
-        if False:
-            dataloader = FastTensorDataLoader(self.all_framedata, batch_size=int(self.Params['Training']['Batch Size']), 
-            shuffle=True)
-        else: #? use current framedata continual learning
-            dataloader = FastTensorDataLoader(cur_data, batch_size=int(self.Params['Training']['Batch Size']), shuffle=True)
+        dataloader = FastTensorDataLoader(cur_data, batch_size=int(self.Params['Training']['Batch Size']), shuffle=True)
 
 
         # frame_epoch = 10000 if isOffline else 50
@@ -823,7 +710,7 @@ class Model():
                     speed = self.alpha*speed+1-self.alpha
 
 
-                    loss_value, loss_n, wv = self.Loss2(
+                    loss_value, loss_n, wv = self.Loss(
                     points, speed, beta, gamma)
                     loss_value.backward()
 
@@ -888,11 +775,11 @@ class Model():
                     print("Epoch = {} -- Loss = {:.4e} -- Alpha = {:.4e}".format(
                         self.epoch, total_diff.item(), self.alpha))
         end_time = time.time()
-        if is_one_frame:
-            duration = end_time-start_time
-            print(f"running in {duration} secs")
-            self.timer.append(duration)
-            np.save("gib6_time.npy",np.array(self.timer))
+        # if is_one_frame:
+        #     duration = end_time-start_time
+        #     print(f"running in {duration} secs")
+        #     self.timer.append(duration)
+        #     np.save("gib6_time.npy",np.array(self.timer))
         return total_diff, cur_data
 
     def save(self, epoch='', val_loss=''):
@@ -923,14 +810,14 @@ class Model():
     def load_traj(self, filepath):
         self.trajectory = np.load(filepath)
      
-    def Gradient3(self, Xp):
+    def Gradient(self, Xp):
         Xp = Xp.to(torch.device(self.Params['Device']))
        
         #Xp.requires_grad_()
         
         #tau, dtau, coords = self.network.out_grad(Xp)
 
-        tau, Xp = self.network.out2(Xp)
+        tau, Xp = self.network.out(Xp)
         dtau = self.gradient(tau, Xp)
         
         D = Xp[:,self.dim:]-Xp[:,:self.dim]
@@ -955,11 +842,11 @@ class Model():
         
         return torch.cat((Ypred0, Ypred1),dim=1)
 
-    def TravelTimes2(self, Xp):
+    def TravelTimes(self, Xp):
         # Apply projection from LatLong to UTM
         Xp = Xp.to(torch.device(self.Params['Device']))
         
-        tau, coords = self.network.out2(Xp)
+        tau, coords = self.network.out(Xp)
 
        
         D = Xp[:,self.dim:]-Xp[:,:self.dim]
@@ -971,17 +858,17 @@ class Model():
         del Xp, tau, T0
         return TT
     
-    def Tau2(self, Xp):
+    def Tau(self, Xp):
         Xp = Xp.to(torch.device(self.Params['Device']))
      
-        tau, coords = self.network.out2(Xp)
+        tau, coords = self.network.out(Xp)
 
         return tau
 
-    def Speed2(self, Xp):
+    def Speed(self, Xp):
         Xp = Xp.to(torch.device(self.Params['Device']))
 
-        tau, Xp = self.network.out2(Xp)
+        tau, Xp = self.network.out(Xp)
         dtau = self.gradient(tau, Xp)
         #Xp.requires_grad_()
         #tau, dtau, coords = self.network.out_grad(Xp)
@@ -1012,21 +899,13 @@ class Model():
         return Ypred
 
 
-    def plot2(self, src, tar, epoch, total_train_loss, alpha, cur_points=None, camera_matrix=None, traj_list = None):
+    def plot(self, src, tar, epoch, total_train_loss, alpha, cur_points=None, camera_matrix=None, traj_list = None):
         limit = 1
         xmin = [-0.5, -0.5]
         xmax = [0.5, 0.5]
-        if self.mode == READ_FROM_TURTLEBOT:
-            xmin = [-1.5, -1.5]
-            xmax = [1.5, 1.5]
         spacing=limit/80.0
         X,Y      = np.meshgrid(np.arange(xmin[0],xmax[0],spacing),np.arange(xmin[1],xmax[1],spacing))
 
-        # Xsrc = [0]*self.dim
-        # Xsrc[0]=-6 #?change
-        # Xsrc[1]=3
-        # Xsrc[2]=0.3
-        # Xsrc = src.detach().clone().cpu().numpy()
         Xsrc = src 
         # Xsrc[2] = 0.2
         # Xsrc = [0.2, -0.2, 0]
@@ -1039,9 +918,9 @@ class Model():
         XP[:,self.dim+1]  = Y.flatten() #! this allow to change from y to z
         XP = Variable(Tensor(XP)).to(self.Params['Device'])
         
-        tt = self.TravelTimes2(XP)
-        ss = self.Speed2(XP)#*5
-        tau = self.Tau2(XP)
+        tt = self.TravelTimes(XP)
+        ss = self.Speed(XP)#*5
+        tau = self.Tau(XP)
         
         TT = tt.to('cpu').data.numpy().reshape(X.shape)
         V  = ss.to('cpu').data.numpy().reshape(X.shape)
@@ -1084,7 +963,7 @@ class Model():
         if traj_list is not None:
             ax.plot(traj_list[:, 0], traj_list[:, 1], color='pink', marker = 'o', markersize=0.8, linestyle='-')
             traj_list_path = self.folder+"/"+str(epoch)+".npy"
-            np.save(traj_list_path, traj_list)
+            # np.save(traj_list_path, traj_list)
             plt.savefig(self.folder+"/plots"+str(epoch)+"_"+str(alpha)+"_"+str(round(total_train_loss,4))+"_0.png",bbox_inches='tight')
 
             #? plot trajectory with step size
@@ -1098,53 +977,12 @@ class Model():
         plt.close(fig)
 
         # draw occupancy grid
-        if self.mode in [EXPLORATION, TURTLEBOT_EXPLORATION]:
+        if self.mode in [EXPLORATION]:
             pathname = self.folder+"/plots"+str(epoch)+"_"+"occ"+".png"
             cur_small_loc = src.cpu().numpy()
             tar_small_loc = tar.cpu().numpy()
             self.occ_map.plot(cur_small_loc, tar_small_loc, path=pathname)
             
-
-
-        # draw four more plots
-        if False:
-            height = 1.2
-            prelocs = [[-7, 4, height], [-7, 1, height], [-1, 1, height], [-3, 4.7, height]]
-            for i,loc in enumerate(prelocs):
-
-                Xsrc = np.array(loc)
-                Xsrc[0] += 4.2529825
-                Xsrc[1] -= 2.682928
-                Xsrc[2] -= 1.1388535
-                Xsrc /= 9.757375
-                
-                XP       = np.zeros((len(X.flatten()),2*self.dim))#*((xmax[dims_n]-xmin[dims_n])/2 +xmin[dims_n])
-                XP[:,:self.dim] = Xsrc
-                XP[:,self.dim:] = Xsrc
-                #XP=XP/scale
-                XP[:,self.dim+0]  = X.flatten()
-                XP[:,self.dim+1]  = Y.flatten() #! this allow to change from y to z
-                XP = Variable(Tensor(XP)).to(self.Params['Device'])
-                
-                tt = self.TravelTimes2(XP)
-                ss = self.Speed2(XP)#*5
-                tau = self.Tau2(XP)
-                
-                TT = tt.to('cpu').data.numpy().reshape(X.shape)
-                V  = ss.to('cpu').data.numpy().reshape(X.shape)
-                TAU = tau.to('cpu').data.numpy().reshape(X.shape)
-
-                fig = plt.figure()
-
-                ax = fig.add_subplot(111)
-                # ax.invert_xaxis()
-                # ax.invert_yaxis()
-                quad1 = ax.pcolormesh(X,Y,V,vmin=0,vmax=1)
-                
-                ax.contour(X,Y,TT,np.arange(0,2,0.02), cmap='bone', linewidths=0.3)#0.25
-                plt.colorbar(quad1,ax=ax, pad=0.1, label='Predicted Velocity')
-                plt.savefig(self.folder+"/plots"+str(epoch)+"_"+str(i)+".png",bbox_inches='tight')
-                plt.close(fig)
 
         if cur_points is not None:
             # print("plot: cur point shape:",cur_points.shape)
@@ -1166,7 +1004,7 @@ class Model():
         point_goal = []
         iter = 0
         while dis > tol:
-            gradient = self.Gradient3(XP_traj[None,:].clone())
+            gradient = self.Gradient(XP_traj[None,:].clone())
             XP_traj = XP_traj + step_size * gradient[0].cpu()
             XP_traj[2] = Xsrc[2]
             XP_traj[5] = Xsrc[2]
@@ -1198,7 +1036,7 @@ class Model():
         point_goal = []
         iter = 0
         while dis > tol:
-            gradient = self.Gradient3(XP_traj[None,:].clone())
+            gradient = self.Gradient(XP_traj[None,:].clone())
             XP_traj = XP_traj + step_size * gradient[0]#.cpu()
             dis = torch.norm(XP_traj[3:6]-XP_traj[0:3])
             point_start.append(XP_traj[0:3])
@@ -1218,166 +1056,14 @@ class Model():
 
         return traj.detach().cpu().numpy()
     
-    def policy_handcrafted(self, idx):
-        height = 1.2 
-        camera_traj = [
-        [0, 0, height],
-        [-2, 0, height],
-        [-1, 3, height],
-        [-1, 5, height],
-        [-2, 4.7, height],
-        [-4, 4.7, height],
-        [-1, 4.7, height],
-        [-2, 2.4, height],
-        [-3.7, 2.4, height],
-        [-3.7, 1, height],
-        [-3.9, 1, height],
-        [-3.7, 1, height],
-        [-3.7, 2.4, height],
-        [-5, 2.4, height],
-        [-5, 3.5, height],
-        [-8.5, 3.5, height],
-        [-6, 5, height],
-        [-6, 3.5, height],
-        [-5, 3.5, height],
-        [-5, 2.4, height],
-        [-6, 2.4, height],
-        [-8, 0.5, height],
-        [-8, 2.4, height],
-        [-6, 2.4, height]
-        ]
-        camera_positions = []
-        for i in range(1, len(camera_traj)):
-            interpolated_points = igib_runner.interpolate_np_arrays(
-                np.array(camera_traj[i-1]), np.array(camera_traj[i]), 5)
-            camera_positions.extend(interpolated_points[:-1])
-        camera_positions.append(interpolated_points[-1])
-        camera_positions = np.vstack(camera_positions)
-        
-        # camera_positions[:, 0] += 4.2529825
-        # camera_positions[:, 1] -= 2.682928
-        # camera_positions[:, 2] -= 1.1388535
-
-        # camera_positions /= 9.757375
-
-        # return Variable(Tensor(camera_pose_dir_pairs[idx][0])).cpu()
-        return Variable(Tensor(camera_positions[-idx-1])).cpu()
-
-    def policy_greedy(self, current_location, frame_data, gamma):
-        min_step = 0.1
-        max_step = 0.5
-        height = 1.2
-
-        # frame_points = frame_data[:,:self.dim*2]
-        # frame_speeds = frame_data[:,self.dim*2:]
-        # frame_points = mesh_small_to_large(frame_points)
-        
-        valid = (frame_data[:,-1] >= 1) & (frame_data[:, 2*self.dim-1] < 0.1) & (frame_data[:, 2*self.dim-1] > -0.1)
-        frame_data = frame_data[valid]
-
-        pre_location = current_location.clone()
-        diff = frame_data[:,self.dim:2*self.dim] - Variable(Tensor(mesh_large_to_small(pre_location))).to(self.Params['Device'])
-        dists = diff.norm(dim=-1)
-        print("greedy dists:", dists)
-        # filter distance
-        valid = (dists >= min_step) & (dists <= max_step)
-        frame_data = frame_data[valid]
-
-        points = frame_data[:,self.dim:2*self.dim]
-        speeds = frame_data[:,2*self.dim:]
-        alpha = 1.05
-        speeds=alpha*speeds+1-alpha
-        print("valid in greedy:", frame_data.shape)
-
-        #! change points to be current, target
-        XP = torch.zeros((points.shape[0],2*self.dim))
-        XP[:,:self.dim] = current_location
-        XP[:,self.dim:] = current_location
-
-        XP[:,self.dim+0]  = points[:,0]
-        XP[:,self.dim+1]  = points[:,1]
-        XP = Variable(Tensor(XP), requires_grad=False).to(self.Params['Device'])
-
-
-        ######! calculate target loss start #######
-        tau, Xp = self.network.out2(XP)
-        dtau = self.gradient(tau,Xp)
-        D = Xp[:,self.dim:]-Xp[:,:self.dim]
-        
-        T0 = torch.einsum('ij,ij->i', D, D)#torch.norm(D, p=2, dim =1)**2
-        DT1=dtau[:,self.dim:]
-        lap1 = 0.5*torch.einsum('ij,ij->i', DT1, DT1)#ltau[:,self.dim:].sum(-1)
-
-        T3    = tau[:,0]**2
-        LogTau = torch.log(tau[:,0])
-        LogTau2 = LogTau**2
-        LogTau3 = LogTau**3
-        LogTau4 = LogTau**4
-
-        T11    = 4*LogTau2*T0/T3*torch.einsum('ij,ij->i', DT1, DT1)
-        T12    = 4*LogTau3/tau[:,0]*torch.einsum('ij,ij->i', DT1, D)
-
-        S1 = (T11+T12+LogTau4)
-        Ypred1 = torch.sqrt(S1)
-        Ypred1_visco = Ypred1
-        
-        sq_Ypred1 = (Ypred1_visco)
-        sq_Yobs1 = (speeds[:,1])
-        
-        l1 = sq_Yobs1*(sq_Ypred1)
-        l1 = torch.sqrt(l1)
-        loss1 = (l1-1)**2
-        ######! calculate target loss end #######
-
-        # Apply projection from LatLong to UTM        
-        TT = torch.log(tau[:, 0])**2* torch.sqrt(T0)
-        LAMBDA = 0.0 # 0: no distance penalty, 1: full distance penalty
-        metric = loss1 * torch.exp(-LAMBDA*TT)
-        max_idx = torch.argmax(metric)
-        target_location = points[max_idx, :]
-        target_location = mesh_small_to_large(target_location)
-        target_location[2] = current_location[2]
-        print("greedy target location:", target_location)
-        print("max gain:", torch.max(metric))
-
-        del Xp, tau, dtau, D, T0, DT1, T11, T12, T3, S1, Ypred1, Ypred1_visco, sq_Ypred1, sq_Yobs1, loss1, TT, metric, max_idx
-        return target_location.cpu()
-    
     def policy_occ(self, current_location, height):
         # curtargetblock = self.occ_map.get_target_block()
         # if not curtargetblock:
         #     return Variable(Tensor([0, 0, height])).cpu()
         # curtargetloc = self.occ_map.get_block_center(curtargetblock)
         possible_locs = self.occ_map.get_block_centers()
-        if False:
-            #? find the closest one
-            curxy = current_location[:2]
-            min_dist = 100
-            curtargetloc = None
-            block_idx = -1
-            for k,loc in enumerate(possible_locs):
-                loc = mesh_small_to_large(loc)
-                dist = np.linalg.norm(curxy - loc)
-                if dist < min_dist:
-                    min_dist = dist
-                    curtargetloc = loc
-                    block_idx = k
-            if curtargetloc is None:
-                print("Warning: current location is not in the occupancy grid !!!")
-                return Variable(Tensor([0, 0, height])).cpu()
-        else:
+        if True:
             #? find the shortest path one
-            """
-            XP       = np.zeros((len(X.flatten()),2*self.dim))#*((xmax[dims_n]-xmin[dims_n])/2 +xmin[dims_n])
-            XP[:,:self.dim] = Xsrc
-            XP[:,self.dim:] = Xsrc
-            #XP=XP/scale
-            XP[:,self.dim+0]  = X.flatten()
-            XP[:,self.dim+1]  = Y.flatten() #! this allow to change from y to z
-            XP = Variable(Tensor(XP)).to(self.Params['Device'])
-            
-            tt = self.TravelTimes2(XP)
-            """
             XP = np.zeros((len(possible_locs),2*self.dim))
 
             #?: change to small locations
@@ -1386,7 +1072,7 @@ class Model():
             XP[:,self.dim+2] = height
             # print("XP", XP)
             XP = Variable(Tensor(XP)).to(self.Params['Device'])
-            tt = self.TravelTimes2(XP)
+            tt = self.TravelTimes(XP)
             tt = tt.to('cpu').data.numpy()
             small_idx = np.argmin(tt)
             curtargetloc_small = possible_locs[small_idx]  
@@ -1424,112 +1110,5 @@ class Model():
         # return Variable(Tensor(curtargetloc)).cpu()
         return traj_list, index - 1
     
-    def turtlebot_setup(self):
-        self.Ts = []
-        self.depths = []
-        self.alpha = 1.1
-        
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        current_filepath = os.path.abspath(__file__)
-        current_dir = os.path.dirname(current_filepath)
-        config_file = os.path.join(current_dir, "../configs/turtlebot4_info.json")
-
-        with open(config_file) as f:
-            configs = json.load(f)
-        self.configs = configs
-        fx = configs["dataset"]["camera"]["fx"]
-        fy = configs["dataset"]["camera"]["fy"]
-        cx = configs["dataset"]["camera"]["cx"]
-        cy = configs["dataset"]["camera"]["cy"]
-        W = configs["dataset"]["camera"]["w"]
-        H = configs["dataset"]["camera"]["h"]
-
-        self.dirs_C = transform.ray_dirs_C(1,H,W,fx,fy,cx,cy,self.device,depth_type="z")
-
-    def turtlebot_explore(self, rgb_np, depth_np, odom_np):
-        # This function is only served for turtlebot exploration
-        # Input: depth, odom
-        # Functionality: forward one step
-        # return nbv, coverage
-
-        #! transform raw data
-        # self.Ts.append(T_np)
-
-        # self.depths.append(depth_np)
-
-        configs = self.configs
-        depth_scale = configs["dataset"]["depth_scale"]
-        inv_depth_scale = 1. / depth_scale
-        min_depth = configs["sample"]["depth_range"][0]
-        max_depth = configs["sample"]["depth_range"][1]
-        n_rays = configs["sample"]["n_rays"]
-        n_rays = 5000 #5000
-        n_strat_samples = configs["sample"]["n_strat_samples"]
-        n_surf_samples = configs["sample"]["n_surf_samples"]
-        dist_behind_surf = configs["sample"]["dist_behind_surf"]  
-        num = 10000
-
-        self.depth_transform = transforms.Compose([isdf_sample.DepthScale(inv_depth_scale), isdf_sample.DepthFilter(max_depth)])
-        
-        #! generate training data
-        T_np = data_pc_validate.convert_transform_odom_to_cam(odom_np)
-        depth_np = depth_np.astype(np.int32)
-        depth_np = self.depth_transform(depth_np)
-        depth = torch.from_numpy(depth_np).float().to(self.device)
-        T = torch.from_numpy(T_np).float().to(self.device)
-        self.cur_view = T.clone().cpu()[:3, 3]
-
-        sample_pts = isdf_sample.sample_points(depth[None,:], T[None,:], n_rays, self.dirs_C, dist_behind_surf, n_strat_samples, n_surf_samples, min_depth, max_depth, None, device=self.device)
-        bounds = isdf_sample.bounds_pc(sample_pts["pc"], sample_pts["z_vals"],
-                            sample_pts["surf_pc"], sample_pts["depth_sample"])
-        pc = sample_pts["pc"].view(-1, 3)
-        bounds = bounds.view(-1, 1)
-        speeds = torch.clip(bounds, self.minimum, self.maximum)/self.maximum
-
-        valid_indices = torch.where((speeds <= 1) & (speeds > 0))[0] 
-        if num <= len(valid_indices):
-            # Select without replacement if num is less than or equal to the size of valid_indices
-            start_indices = valid_indices[torch.randperm(len(valid_indices))[:num]]
-            end_indices = valid_indices[torch.randperm(len(valid_indices))[:num]]
-        else:
-            # Select with replacement if num is greater than the size of valid_indices
-            rand_indices = torch.randint(0, len(valid_indices), (num,))
-            start_indices = valid_indices[rand_indices]
-
-            rand_indices = torch.randint(0, len(valid_indices), (num,))
-            end_indices = valid_indices[rand_indices]
-
-        end_indices = torch.randint(0, pc.shape[0], (num,))
-        x0 = pc[start_indices]
-        x1 = pc[end_indices]
-        frame_points = torch.cat((x0, x1), dim=1)
-        frame_speeds = torch.cat((speeds[start_indices], speeds[end_indices]), dim=1)
-        frame_bounds = torch.cat((bounds[start_indices], bounds[end_indices]), dim=1)
-        frame_points /= self.scale_factor
-        frame_bounds /= self.scale_factor
-        frame_data = torch.cat((frame_points.to(self.Params['Device']), frame_speeds.to(self.Params['Device'])), dim=1)
-        
-        #! train one step
-        frame_epoch = 20
-        total_diff, cur_data = self.train_core(frame_epoch, frame_data)
-
-        #! Update the occupancy grid
-        #? filter frame points with some z range
-        valid = (frame_points[:,-1] > -10.1) & (frame_points[:,-1] < 10.1)
-        self.occ_map.update(self.cur_view.clone().cpu().numpy(), frame_points[valid].cpu().numpy(), frame_bounds[valid].cpu().numpy())
-        coverage = self.occ_map.get_coverage()
-        print("Occupancy Grid Coverage:", coverage)
-        nbv = self.policy_occ(self.cur_view.detach().clone().cpu().numpy(), height=0)
-
-        #! plot
-        image_path = self.folder+"/rgb_"+str(self.epoch)+".png"
-        cv2.imwrite(image_path, rgb_np)
-        self.plot2(self.cur_view.detach().clone().cpu().numpy(), nbv.detach().clone().cpu().numpy(), self.epoch, total_diff.item(),self.alpha, cur_data[:,:6].clone().cpu().numpy())
-
-        #! Transform NBV
-        nbv = data_pc_validate.convert_cam_xyz_to_odom_xyz(nbv.numpy())
-
-        return nbv, coverage
-
 
     

@@ -261,7 +261,7 @@ def sample_points_from_pos(model, position, scale_factor=1):
         sub_dataset["T_np"] = T_np
         # sub_dataset["normals"] = normals/np.linalg.norm(normals, axis=-1, keepdims=True)
         # sub_dataset["position"] = position*scale_factor
-        np.save(savepath, sub_dataset)
+        # np.save(savepath, sub_dataset)
 
 
     depth = torch.from_numpy(depth[None,:]).float().to(device)

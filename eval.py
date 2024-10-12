@@ -65,15 +65,15 @@ def our_method_eval(meshpath, modelPath, datapath):
 
     # Load the data
     scale_factor = 10 
-    mode = 2
+    mode = 1
     renderer = None
     model    = md.Model('./Experiments', 3, scale_factor, mode, renderer, device='cuda:0')
     model.load(modelPath)
 
-    #TODO: write start and goal random samples
+    # write start and goal random samples
     explored_data = np.load(datapath, allow_pickle=True).reshape(-1, 8)
     potential_points = explored_data[:, 3:6]
-    valid_mask = explored_data[:, 7] > 0.95
+    valid_mask = explored_data[:, 7] > 0.995
     valid_points = potential_points[valid_mask]
     N = 100
     rand_idx = np.random.choice(len(valid_points), 2*N)
@@ -89,7 +89,7 @@ def our_method_eval(meshpath, modelPath, datapath):
         src = start_points[i]
         tar = end_points[i]
         start_time = time.time()
-        cur_trajectory = model.predict_trajectory(src, tar, step_size=0.05, tol=0.05)
+        cur_trajectory = model.predict_trajectory(src, tar, step_size=0.03, tol=0.03)
         end_time = time.time()
         
         if check_collision(cur_trajectory, triangles):
@@ -109,7 +109,7 @@ def our_method_eval(meshpath, modelPath, datapath):
     print('Average trajectory length: ', np.mean(success_lens))
 
     #! vis
-    if True:
+    if False:
         import trimesh 
         mesh = trimesh.load_mesh(meshpath)
         M = 5
@@ -124,8 +124,11 @@ def our_method_eval(meshpath, modelPath, datapath):
     # return trajectories, fail_trajs
 
 if __name__ == '__main__':
+    random_seed = 0
+    np.random.seed(random_seed)
+
     meshpath = './data/mesh.obj'
-    modelpath = './Experiments/10_09_14_50/Model_Epoch_04000_ValLoss_3.739335e-02.pt'
+    modelpath = './Experiments/10_12_11_23/Model_Epoch_04650_ValLoss_2.591095e-02.pt'
     datapath = './data/explored_data.npy'
 
     our_method_eval(meshpath, modelpath, datapath)
